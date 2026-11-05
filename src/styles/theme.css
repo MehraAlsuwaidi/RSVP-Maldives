@@ -1,0 +1,47 @@
+/* Palette sampled from the castle artwork: dusty pink stone, blush roses,
+   warm ivory, champagne gold, soft yellow and powder-blue blooms, sage leaves. */
+:root {
+  --ivory: #fcf6ee;
+  --ivory-2: #f7ece0;
+  --pearl: #fffaf3;
+  --blush-50: #fbeeea;
+  --blush-100: #f6dfda;
+  --blush-200: #efcac6;
+  --rose-300: #e2a9b1;
+  --rose-400: #d48a99;
+  --rose-500: #c27184; /* decorative accent */
+  --rose-700: #96485d; /* buttons with ivory text (≥ 6:1) */
+  --rose-800: #7c3a4c;
+  --ink: #57363d; /* rose-brown body text (≈ 10:1 on ivory) */
+  --ink-soft: #775059; /* secondary text (≈ 6.5:1 on ivory) */
+  --gold: #c7a464;
+  --gold-soft: #dfc795;
+  --gold-deep: #9c7a3c;
+  --butter: #f3dc96;
+  --powder: #aec3e3;
+  --sage: #8ea58b;
+  --sky-1: #b8b2cf;
+  --sky-2: #e9c4c6;
+  --sky-3: #f8dcc7;
+  --danger: #a3303f;
+  --success: #4f7a4b;
+
+  --font-serif: 'Cormorant Garamond', 'Cormorant', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --radius-sm: 10px;
+  --radius: 18px;
+  --radius-lg: 28px;
+  --shadow-soft: 0 18px 50px -24px rgba(110, 56, 70, 0.45), 0 2px 8px -2px rgba(110, 56, 70, 0.12);
+  --shadow-lift: 0 26px 60px -22px rgba(110, 56, 70, 0.55);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --gutter: max(16px, var(--safe-left), var(--safe-right));
+
+  color-scheme: light;
+}

@@ -1,0 +1,25 @@
+# Cloudflare Worker that serves the invitation (/), the owner dashboard (/admin)
+# and the RSVP API (/api/*), backed by a D1 (SQLite) database.
+name = "rsvp-maldives"
+main = "worker/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rsvp-maldives"
+# Replace with the id printed by `npx wrangler d1 create rsvp-maldives` (see README).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[vars]
+MAX_GUESTS = "20"
+# Owner login secrets are NOT stored here. Set them with `npm run setup:owner`:
+#   OWNER_PASSWORD_HASH  – PBKDF2 hash of the owner's password
+#   SESSION_SECRET       – random key used to sign the owner's session cookie
