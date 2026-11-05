@@ -23,17 +23,17 @@ export async function checkSession() {
   return true;
 }
 
-export async function login(password) {
+export async function login(pin) {
   const res = await request('/api/admin/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ pin }),
   });
   if (res.ok) return true;
   const messages = {
-    401: 'That password isn’t right. Please try again.',
-    429: 'Too many attempts. For safety, sign-in is paused for 15 minutes.',
-    503: 'The owner login hasn’t been set up yet. Ask the organiser to finish the setup step.',
+    401: 'That PIN isn’t right. Please try again.',
+    429: 'Too many wrong PINs. For safety, sign-in is paused — please try again later.',
+    503: 'The dashboard isn’t fully set up yet (PIN or database missing).',
   };
   throw new ApiError(messages[res.status] || 'Sign-in failed. Please try again.', res.status);
 }
@@ -58,7 +58,7 @@ export async function fetchResponses() {
 /** Downloads the server-generated CSV for the current filters (owner session required). */
 export async function downloadCsv({ q, attendance, sort }) {
   const params = new URLSearchParams({ q, attendance, sort });
-  const res = await request(`/api/admin/rsvps.csv?${params}`, { headers: { Accept: 'text/csv' } });
+  const res = await request(`/api/admin/export?${params}`, { headers: { Accept: 'text/csv' } });
   if (res.status === 401) throw new ApiError('Your session has ended. Please sign in again.', 401);
   if (!res.ok) throw new ApiError('The CSV couldn’t be created. Please try again.', res.status);
   const blob = await res.blob();

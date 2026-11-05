@@ -12,68 +12,79 @@ const formatWhen = (iso) => {
   return `${dateFmt.format(d)}, ${timeFmt.format(d)}`;
 };
 
-/* ---------------- Login ---------------- */
+/* ---------------- PIN sign-in ---------------- */
 function Login({ notice, onSignedIn }) {
   const id = useId();
-  const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
+  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => inputRef.current?.focus(), []);
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(value = pin) {
     if (busy) return;
-    if (!password) {
-      setError('Please enter the owner password.');
+    if (!/^\d{4}$/.test(value)) {
+      setError('Please enter the 4-digit PIN.');
       inputRef.current?.focus();
       return;
     }
     setBusy(true);
     setError('');
     try {
-      await login(password);
-      setPassword('');
+      await login(value);
       onSignedIn();
     } catch (err) {
       setError(err.message);
+      setPin('');
       inputRef.current?.focus();
     } finally {
       setBusy(false);
     }
   }
 
+  const onChange = (e) => {
+    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+    setPin(value);
+    if (error) setError('');
+    if (value.length === 4) submit(value); // signs in as soon as the 4th digit is typed
+  };
+
   return (
     <main className="login">
-      <form className="login__card" onSubmit={submit} noValidate>
+      <form
+        className="login__card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        noValidate
+      >
         <img className="login__logo" src={ASSETS.logoTitle.src} alt="Magical Birthday" width={ASSETS.logoTitle.width} height={ASSETS.logoTitle.height} />
         <h1 className="login__title">RSVP dashboard</h1>
-        <p className="login__sub">For the event owner only. Sign in to see guest responses.</p>
+        <p className="login__sub">Enter the 4-digit PIN to see guest responses.</p>
         {notice && (
           <p className="notice" role="status">
             {notice}
           </p>
         )}
         <div className="a-field">
-          <label htmlFor={`${id}-pw`}>Owner password</label>
-          <div className="a-password">
-            <input
-              ref={inputRef}
-              id={`${id}-pw`}
-              type={show ? 'text' : 'password'}
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={error ? 'true' : undefined}
-              aria-describedby={error ? `${id}-err` : undefined}
-              required
-            />
-            <button type="button" className="a-password__toggle" onClick={() => setShow((s) => !s)} aria-pressed={show}>
-              {show ? 'Hide' : 'Show'}
-            </button>
-          </div>
+          <label htmlFor={`${id}-pin`}>PIN</label>
+          <input
+            ref={inputRef}
+            id={`${id}-pin`}
+            className="a-pin"
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={4}
+            value={pin}
+            onChange={onChange}
+            disabled={busy}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? `${id}-err` : undefined}
+          />
           {error && (
             <p className="a-error" id={`${id}-err`} role="alert">
               {error}
@@ -81,7 +92,7 @@ function Login({ notice, onSignedIn }) {
           )}
         </div>
         <button className="a-btn a-btn--primary a-btn--block" type="submit" aria-disabled={busy || undefined}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? 'Opening…' : 'Open dashboard'}
         </button>
       </form>
     </main>

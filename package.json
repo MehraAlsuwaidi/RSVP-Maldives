@@ -2,33 +2,28 @@
   "name": "rsvp-maldives",
   "private": true,
   "version": "1.0.0",
-  "description": "A fairytale birthday invitation for Hermione, Isabella and Selena, with RSVP collection.",
+  "description": "Fairytale birthday invitation with RSVP collection and a PIN-protected dashboard (Vercel + Postgres).",
   "type": "module",
   "engines": {
     "node": ">=18.17"
   },
   "scripts": {
     "dev": "vite",
-    "dev:api": "wrangler dev --local --port 8787",
     "dev:live": "VITE_RSVP_ENDPOINT=/api/rsvp vite",
     "build": "vite build",
-    "db:migrate:local": "wrangler d1 migrations apply rsvp-maldives --local",
-    "db:migrate": "wrangler d1 migrations apply rsvp-maldives --remote",
-    "setup:owner": "node scripts/setup-owner.mjs",
-    "setup:owner:local": "node scripts/setup-owner.mjs --local",
-    "deploy": "vite build && wrangler deploy",
+    "preview": "vite preview",
     "test:smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "5.0.13",
     "@fontsource/nunito-sans": "5.0.13",
+    "@neondatabase/serverless": "0.10.4",
     "framer-motion": "11.11.17",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.4",
-    "vite": "5.4.11",
-    "wrangler": "^3.114.17"
+    "vite": "5.4.11"
   }
 }

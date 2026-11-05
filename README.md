@@ -1,179 +1,116 @@
-# A Magical Birthday Celebration — invitation, RSVP & owner dashboard
+# A Magical Birthday Celebration — invitation, RSVP & dashboard
 
-An interactive fairytale invitation for **Hermione, Isabella and Selena**, plus a password-protected
-dashboard where the event owner sees every RSVP.
+An interactive fairytale invitation for **Hermione, Isabella and Selena**, with RSVP collection and a
+PIN-protected dashboard for the family.
 
 | Page | Path | Who it's for |
 |---|---|---|
-| Invitation + RSVP | `/` | Guests. Public, no account needed |
-| RSVP dashboard | `/admin/` | Event owner only. Password login, enforced by the server |
+| Invitation + RSVP | `/` | Guests. Public, anyone can reply without an account |
+| RSVP dashboard | `/admin` | The family. Enter the 4-digit PIN |
 
-Stack: React 18 + Vite + Framer Motion (frontend), a Cloudflare Worker (API) and
-Cloudflare D1 (shared SQLite database). Everything is served from one HTTPS origin on the free
-Cloudflare plan.
+Stack: React 18 + Vite + Framer Motion, Vercel serverless functions (`api/`), and Postgres (Neon, connected
+through Vercel's Storage integration).
 
----
+## Hosting on Vercel
 
-## 1. Run it locally
+The app is deployed as one Vercel project:
+
+- **Static site:** Vite builds the invitation and the dashboard into `dist/`.
+- **API:** the functions in `api/`.
+- **Database:** a Neon Postgres database connected under the project's **Storage** tab. Vercel injects
+  `DATABASE_URL` into the functions, and the tables are created automatically on the first request.
+
+**Environment variables** (Vercel → Project → Settings → Environment Variables):
+
+| Name | Value |
+|---|---|
+| `ADMIN_PIN` | The 4-digit dashboard PIN |
+| `SESSION_SECRET` | A long random string that signs dashboard sessions |
+| `DATABASE_URL` | Added automatically when the Neon database is connected |
+
+**To change the PIN:** edit `ADMIN_PIN` in Vercel, then redeploy (Deployments → ⋯ → Redeploy).
+To also sign everyone out of the dashboard, change `SESSION_SECRET` at the same time.
+
+**Redeploying from your own computer:**
+
+```bash
+npx vercel deploy --prod
+```
+
+**Checking the live site** (this adds two "Smoke Test …" rows to the dashboard):
+
+```bash
+BASE_URL=https://<your-site>.vercel.app ADMIN_PIN=<pin> npm run test:smoke
+```
+
+## How the PIN is protected
+
+- The PIN lives **only** in Vercel's environment variables. It is never in the website code or in git.
+  Every dashboard request, including the CSV download, is checked on the server.
+- A 4-digit PIN has only 10,000 combinations, so guessing is throttled. After 5 wrong PINs from one
+  device or network, sign-in pauses for 15 minutes. After 30 wrong PINs in total within an hour,
+  sign-in pauses for everyone until the hour passes.
+- A correct PIN gives a 12-hour sign-in, stored as an `HttpOnly; Secure; SameSite=Strict` cookie.
+
+## How RSVPs are saved
+
+```
+Guest form ─► submitRsvp() (src/services/rsvpService.js)
+               │ POST /api/rsvp { attendance, name, phone, guests, submissionId }
+               ▼
+api/rsvp.js ─ validates again (shared/rsvpValidation.js)
+               │ INSERT … ON CONFLICT (submission_id) DO UPDATE … RETURNING id
+               ▼
+Postgres table `rsvps` ─► /admin dashboard (PIN session only)
+```
+
+- **Yes** requires name, phone and guest count (a whole number of 1 or more, including the person replying).
+  **No** requires only the name, and saves 0 guests.
+- The guest sees a confirmation **only after the database confirms the save**. If saving fails, they get
+  "Try again" and everything they typed is kept.
+- **No duplicates:** each form gets one `submissionId`. Repeat taps are ignored while sending, and a
+  retry updates the same row instead of adding a new one.
+- The dashboard shows four totals: total responses, attending parties, attending guests (the sum of guest
+  counts on Yes replies) and declined. It also has search, an attendance filter, sorting, refresh, and a
+  server-generated CSV of the filtered list.
+
+## Local development
 
 ```bash
 npm install
 ```
 
-**Design only (preview mode, nothing is saved):**
-
 ```bash
 npm run dev
 ```
 
-A purple "Preview mode · RSVPs are not sent" badge shows, and RSVP confirmations say the response was *not*
-sent.
+`npm run dev` runs **preview mode**: the purple "Preview mode" badge shows, and nothing is sent or saved.
 
-**Full stack (real API, local database, owner login):**
+## Editing content and artwork
 
-```bash
-npm run setup:owner:local
-```
+Everything editable is in `src/config/event.js`:
 
-```bash
-npm run db:migrate:local
-```
-
-```bash
-npm run build && npm run dev:api
-```
-
-Open <http://localhost:8787> for the invitation and <http://localhost:8787/admin/> for the dashboard.
-For hot-reload while using the local API, run `npm run dev:api` in one terminal and `npm run dev:live` in another.
-
-```bash
-OWNER_PASSWORD='the password you chose' npm run test:smoke
-```
-
-This runs 12 end-to-end checks covering saving, duplicates, validation, cross-site posts, auth and CSV.
-
----
-
-## 2. Deploy (public HTTPS links)
-
-You need a free Cloudflare account. Run all of this from the project folder:
-
-1. **Sign in:**
-
-   ```bash
-   npx wrangler login
-   ```
-
-2. **Create the database.** Then copy the printed `database_id` into `wrangler.toml`, replacing `00000000-…`:
-
-   ```bash
-   npx wrangler d1 create rsvp-maldives
-   ```
-
-3. **Create the tables:**
-
-   ```bash
-   npm run db:migrate
-   ```
-
-4. **Build and deploy.** Wrangler prints the live URL, e.g. `https://rsvp-maldives.<your-subdomain>.workers.dev`:
-
-   ```bash
-   npm run deploy
-   ```
-
-5. **Set the owner login** (next section).
-
-6. **Check the live site.** Note that this adds two "Smoke Test …" rows to the real dashboard:
-
-   ```bash
-   BASE_URL=https://rsvp-maldives.<your-subdomain>.workers.dev OWNER_PASSWORD='…' npm run test:smoke
-   ```
-
-**Links to hand over**
-
-- Guests: `https://rsvp-maldives.<your-subdomain>.workers.dev/`
-- Event owner: `https://rsvp-maldives.<your-subdomain>.workers.dev/admin/`
-
-To use a custom domain, add it in the Cloudflare dashboard under Workers → rsvp-maldives → Settings → Domains & Routes.
-
----
-
-## 3. Owner login: secure setup
-
-Run this command and type the owner's password when prompted. The input is hidden. Use at least 12 characters; a short phrase works well.
-
-```bash
-npm run setup:owner
-```
-
-- Only a **PBKDF2-SHA256 hash** of the password is stored, as the Worker secret `OWNER_PASSWORD_HASH`.
-  A random `SESSION_SECRET` that signs login cookies is stored alongside it. Neither secret is in the code or in git.
-- Give the password to the owner **separately from the link**, for example in person or by phone, not in the same message.
-- To change the password, run the command again. This also signs out every existing session.
-- Sessions last 12 hours and use `HttpOnly; Secure; SameSite=Strict` cookies.
-- After 8 wrong passwords from one IP address, sign-in is paused for 15 minutes.
-
-**What the server enforces:**
-
-- Every `/api/admin/*` endpoint checks the session, including the JSON list and the CSV download.
-- Guest data never ships in the page bundle. The public site can only *add* an RSVP; it can never read one.
-- POST requests from other websites are rejected.
-
----
-
-## 4. How RSVP collection works
-
-```
-Guest form ──► submitRsvp() (src/services/rsvpService.js)
-                 │  POST /api/rsvp  { attendance, name, phone, guests, submissionId }
-                 ▼
-Worker (worker/index.js) ── validates again with shared/rsvpValidation.js
-                 │  INSERT … ON CONFLICT(submission_id) DO UPDATE … RETURNING id
-                 ▼
-D1 table `rsvps` ──► /admin dashboard (owner session only)
-```
-
-- **Yes** requires name, phone and guest count (whole number ≥ 1, including the person replying).
-  **No** requires only the name; phone is cleared and guests are saved as **0**.
-- **Confirmation appears only after the database confirms the save** (`{ ok: true, id }`). Otherwise the guest sees
-  an error with *Try again*, and everything they typed stays in the form.
-- **No duplicates:** each form gets a `submissionId` once. Repeated taps are ignored while a request is in
-  flight. A retry, for example after a timeout where the first save actually succeeded, updates the same row
-  instead of adding a new one.
-- "Attending guests" on the dashboard = the sum of guest counts on Yes responses.
-- The CSV export is generated **by the server**, using the dashboard's current search, filter and sort.
-
----
-
-## 5. Editing content and artwork
-
-Everything editable is in **`src/config/event.js`**:
-
-- `EVENT`: date and time labels, ISO start and end times (`+05:00`), venue and map query.
+- `EVENT`: date, times, venue and map query.
 - `COPY`: all invitation wording.
 - `ASSETS`: image paths, alt text and focal points.
-- `RSVP_CONFIG`: endpoint, timeout and maximum guests (the server limit is `MAX_GUESTS` in `wrangler.toml`).
 
-Theme colours are in `src/styles/theme.css`.
+Colours are in `src/styles/theme.css`.
 
-**Optional artwork not yet in the repo.** Drop these files into `public/assets/` and set their `src`:
+**Optional artwork:**
 
-- `ASSETS.invitationArt.src = '/assets/invitation.jpg'` makes Chapter 1 use the ornate invitation artwork. Adjust `textArea` so the
-  live text sits in its empty ivory area. Until then, Chapter 1 is an ivory card built from the castle art.
-- `ASSETS.celebrating.src = '/assets/scene-5.jpg'` gives Chapter 4 its own scene. Until then, it shows an oval portrait crop of the ballroom art.
+- `ASSETS.invitationArt.src`: the ornate invitation artwork for Chapter 1.
+- `ASSETS.celebrating.src`: `scene_5` for Chapter 4.
+
+Drop the files into `public/assets/` and set these paths to use them.
 
 ## Project map
 
 ```
-index.html, admin/index.html   two pages (Vite multi-page build)
-src/App.jsx                    invitation shell: envelope → chapters → nav
-src/components/                Envelope, Sparkles, RsvpForm, Countdown, ChapterNav, …
-src/chapters/                  the five storybook chapters
-src/admin/                     owner dashboard (login, summary, table/cards, CSV)
-src/services/rsvpService.js    the only place that knows how RSVPs are sent
-shared/                        validation, filtering and CSV, used by browser and server
-worker/                        Cloudflare Worker API + auth
-migrations/                    D1 schema
-scripts/                       owner setup, smoke tests
+index.html, admin/index.html   the two pages (Vite multi-page build)
+src/                           React app: chapters, components, admin dashboard
+api/                           Vercel functions: rsvp, admin/login|logout|session|rsvps|export
+lib/                           database, PIN/session and HTTP helpers for the functions
+shared/                        validation, filtering and CSV, used by both the browser and the server
+scripts/smoke-test.mjs         end-to-end checks against a deployment
+vercel.json                    build settings, /admin route, security headers
 ```

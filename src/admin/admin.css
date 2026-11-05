@@ -587,3 +587,11 @@ a {
     animation-duration: 2s;
   }
 }
+
+.a-field input.a-pin {
+  font-size: 1.8rem;
+  letter-spacing: 0.6em;
+  text-align: center;
+  padding-left: 0.6em;
+  min-height: 60px;
+}

@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * End-to-end checks against a running Worker (local `npm run dev:api`, or a deployment).
- *   BASE_URL=http://localhost:8787 OWNER_PASSWORD=... npm run test:smoke
+ * End-to-end checks against a deployment.
+ *   BASE_URL=https://your-site.vercel.app ADMIN_PIN=<your-pin> npm run test:smoke
  * Writes test RSVPs named "Smoke Test …" — run against production only if you are
  * happy to see (and later ignore) those rows in the dashboard.
  */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
-const BASE = process.env.BASE_URL || 'http://localhost:8787';
-const PASSWORD = process.env.OWNER_PASSWORD;
+const BASE = process.env.BASE_URL;
+if (!BASE) throw new Error('Set BASE_URL');
+const PIN = process.env.ADMIN_PIN;
 const origin = new URL(BASE).origin;
 let passed = 0;
 
@@ -74,19 +75,20 @@ await step('rejects cross-site posts', async () => {
 
 await step('owner data and downloads require a login', async () => {
   assert.equal((await fetch(BASE + '/api/admin/rsvps')).status, 401);
-  assert.equal((await fetch(BASE + '/api/admin/rsvps.csv')).status, 401);
+  assert.equal((await fetch(BASE + '/api/admin/export')).status, 401);
   assert.equal((await fetch(BASE + '/api/admin/session')).status, 401);
-  const forged = await fetch(BASE + '/api/admin/rsvps', { headers: { Cookie: `rsvp_owner=${Date.now() + 1e6}.forged; __Host-rsvp_owner=${Date.now() + 1e6}.forged` } });
+  const forged = await fetch(BASE + '/api/admin/rsvps', { headers: { Cookie: `__Host-rsvp_admin=${Date.now() + 1e6}.forged` } });
   assert.equal(forged.status, 401);
 });
 
-await step('wrong password is refused', async () => {
-  assert.equal((await post('/api/admin/login', { password: 'definitely-wrong' })).status, 401);
+await step('wrong PIN is refused', async () => {
+  const wrong = PIN === '0000' ? '0001' : '0000';
+  assert.equal((await post('/api/admin/login', { pin: wrong })).status, 401);
 });
 
-if (PASSWORD) {
-  await step('owner can sign in', async () => {
-    const res = await post('/api/admin/login', { password: PASSWORD });
+if (PIN) {
+  await step('owner can open the dashboard with the PIN', async () => {
+    const res = await post('/api/admin/login', { pin: PIN });
     assert.equal(res.status, 200);
     const setCookie = res.headers.get('set-cookie') || '';
     assert.match(setCookie, /HttpOnly/i);
@@ -108,7 +110,7 @@ if (PASSWORD) {
   });
 
   await step('CSV export applies the filters server-side', async () => {
-    const res = await fetch(`${BASE}/api/admin/rsvps.csv?attendance=no&q=${encodeURIComponent(tag)}`, { headers: { Cookie: cookie } });
+    const res = await fetch(`${BASE}/api/admin/export?attendance=no&q=${encodeURIComponent(tag)}`, { headers: { Cookie: cookie } });
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/csv/);
     const text = await res.text();
@@ -116,7 +118,7 @@ if (PASSWORD) {
     assert.ok(!text.includes(`${tag} Yes`));
   });
 } else {
-  console.log('  – skipped owner checks (set OWNER_PASSWORD to run them)');
+  console.log('  – skipped owner checks (set ADMIN_PIN to run them)');
 }
 
 console.log(`\n${passed} checks passed.`);
