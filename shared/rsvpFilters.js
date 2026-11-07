@@ -11,6 +11,7 @@ export function filterResponses(rows, { q = '', attendance = 'all', sort = 'newe
     }
     if (!query) return true;
     if (String(r.name ?? '').toLowerCase().includes(query)) return true;
+    if ((r.guestNames || []).some((g) => String(g).toLowerCase().includes(query))) return true;
     if (String(r.phone ?? '').toLowerCase().includes(query)) return true;
     return queryDigits.length >= 3 && digits(r.phone).includes(queryDigits);
   });
@@ -49,11 +50,11 @@ export function toCsv(rows, timeZone = 'Indian/Maldives') {
     minute: '2-digit',
     hour12: false,
   });
-  const header = ['Guest name', 'Phone number', 'Attendance', 'Number of guests', 'Submitted (Maldives time)', 'Submitted (UTC ISO)'];
+  const header = ['Guest name', 'Phone number', 'Attendance', 'Number of guests', 'Guest names', 'Submitted (Maldives time)', 'Submitted (UTC ISO)'];
   const lines = [header.map(csvCell).join(',')];
   for (const r of rows) {
     lines.push(
-      [r.name, r.phone ?? '', r.attendance === 'yes' ? 'Yes' : 'No', r.guests, fmt.format(new Date(r.submittedAt)), r.submittedAt]
+      [r.name, r.phone ?? '', r.attendance === 'yes' ? 'Yes' : 'No', r.guests, (r.guestNames || []).join('; '), fmt.format(new Date(r.submittedAt)), r.submittedAt]
         .map(csvCell)
         .join(','),
     );

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ASSETS, EVENT } from '../config/event.js';
 import { filterResponses, summarise } from '../../shared/rsvpFilters.js';
-import { ApiError, checkSession, downloadCsv, fetchResponses, login, logout } from './api.js';
+import { ApiError, checkSession, deleteRsvp, deleteRsvps, downloadCsv, fetchResponses, login, logout } from './api.js';
+import { ConfirmDelete, EditRsvp } from './Dialogs.jsx';
 
 const TZ = EVENT.timeZone;
 const dateFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric' });
@@ -113,6 +114,33 @@ function SummaryCard({ label, value, hint, tone }) {
 const Badge = ({ attendance }) =>
   attendance === 'yes' ? <span className="badge badge--yes">Yes</span> : <span className="badge badge--no">No</span>;
 
+const wasUpdated = (r) => r.updatedAt && Math.abs(new Date(r.updatedAt) - new Date(r.submittedAt)) > 1000;
+
+function GuestList({ r }) {
+  if (r.attendance === 'no') return <p className="muted">Declined, no attending guests.</p>;
+  if (!r.guestNames?.length)
+    return (
+      <p className="muted">
+        Guest names not provided ({r.guests} {r.guests === 1 ? 'guest' : 'guests'}).
+      </p>
+    );
+  return (
+    <ol className="guest-list">
+      {r.guestNames.map((g, i) => (
+        <li key={i}>{g}</li>
+      ))}
+    </ol>
+  );
+}
+
+function Checkbox({ checked, indeterminate = false, onChange, label }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return <input ref={ref} type="checkbox" className="a-check" checked={checked} onChange={onChange} aria-label={label} />;
+}
+
 function Dashboard({ onSignedOut }) {
   const id = useId();
   const [state, setState] = useState({ status: 'loading', responses: [], fetchedAt: null, error: '' });
@@ -120,6 +148,12 @@ function Dashboard({ onSignedOut }) {
   const [attendance, setAttendance] = useState('all');
   const [sort, setSort] = useState('newest');
   const [exportState, setExportState] = useState({ busy: false, error: '' });
+  const [selected, setSelected] = useState(() => new Set());
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null); // { records }
+  const [confirmState, setConfirmState] = useState({ busy: false, error: '' });
+  const [toast, setToast] = useState(null);
   const loadingRef = useRef(false);
 
   const handleAuthError = useCallback(
@@ -151,9 +185,42 @@ function Dashboard({ onSignedOut }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const totals = useMemo(() => summarise(state.responses), [state.responses]);
   const visible = useMemo(() => filterResponses(state.responses, { q, attendance, sort }), [state.responses, q, attendance, sort]);
   const filtered = q.trim() !== '' || attendance !== 'all';
+
+  // Selection only ever covers the rows currently displayed.
+  useEffect(() => {
+    const shown = new Set(visible.map((r) => r.id));
+    setSelected((sel) => {
+      const next = new Set([...sel].filter((x) => shown.has(x)));
+      return next.size === sel.size ? sel : next;
+    });
+  }, [visible]);
+
+  const allSelected = visible.length > 0 && visible.every((r) => selected.has(r.id));
+  const someSelected = selected.size > 0 && !allSelected;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map((r) => r.id)));
+  const toggleOne = (rid) =>
+    setSelected((sel) => {
+      const next = new Set(sel);
+      if (next.has(rid)) next.delete(rid);
+      else next.add(rid);
+      return next;
+    });
+  const toggleExpanded = (rid) =>
+    setExpanded((ex) => {
+      const next = new Set(ex);
+      if (next.has(rid)) next.delete(rid);
+      else next.add(rid);
+      return next;
+    });
 
   async function exportCsv() {
     if (exportState.busy) return;
@@ -179,7 +246,52 @@ function Dashboard({ onSignedOut }) {
     setAttendance('all');
   };
 
+  const onSaved = async (response, err) => {
+    if (err) return handleAuthError(err);
+    setEditing(null);
+    setToast({ type: 'success', text: `Changes to ${response.name}’s RSVP were saved.` });
+    await load(); // search, filters and sorting are kept
+  };
+
+  const askDelete = (records) => {
+    setConfirmState({ busy: false, error: '' });
+    setConfirm({ records });
+  };
+
+  async function confirmDelete() {
+    if (!confirm || confirmState.busy) return;
+    setConfirmState({ busy: true, error: '' });
+    try {
+      const ids = confirm.records.map((r) => r.id);
+      const out = ids.length === 1 ? await deleteRsvp(ids[0]) : await deleteRsvps(ids);
+      setConfirm(null);
+      setEditing(null);
+      setSelected((sel) => new Set([...sel].filter((x) => !ids.includes(x))));
+      setToast({
+        type: 'success',
+        text: `Deleted ${out.deleted === 1 ? '1 RSVP' : `${out.deleted} RSVPs`} (${out.attendingGuests === 1 ? '1 attending guest' : `${out.attendingGuests} attending guests`}).`,
+      });
+      await load();
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      setConfirmState({ busy: false, error: err.message });
+      if (err.status === 404) load();
+    }
+  }
+
   const firstLoad = state.status === 'loading' && !state.fetchedAt;
+  const selectedRecords = visible.filter((r) => selected.has(r.id));
+
+  const Actions = ({ r }) => (
+    <div className="row-actions">
+      <button type="button" className="a-btn a-btn--ghost a-btn--small" onClick={() => setEditing(r)} aria-label={`View or edit ${r.name}’s RSVP`}>
+        View / Edit
+      </button>
+      <button type="button" className="a-btn a-btn--danger-ghost a-btn--small" onClick={() => askDelete([r])} aria-label={`Delete ${r.name}’s RSVP`}>
+        Delete
+      </button>
+    </div>
+  );
 
   return (
     <div className="dash">
@@ -227,7 +339,7 @@ function Dashboard({ onSignedOut }) {
 
           <div className="toolbar">
             <div className="a-field toolbar__search">
-              <label htmlFor={`${id}-q`}>Search by name or phone</label>
+              <label htmlFor={`${id}-q`}>Search by name, guest or phone</label>
               <input id={`${id}-q`} type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. Aisha or 777" autoComplete="off" />
             </div>
             <fieldset className="segmented">
@@ -253,19 +365,13 @@ function Dashboard({ onSignedOut }) {
               </select>
             </div>
             <div className="toolbar__actions">
-              <button type="button" className="a-btn a-btn--ghost" onClick={load} aria-disabled={state.status === 'refreshing' || firstLoad || undefined}>
+              <button type="button" className="a-btn a-btn--ghost" onClick={load} disabled={state.status === 'refreshing' || firstLoad}>
                 <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />
                 </svg>
                 Refresh
               </button>
-              <button
-                type="button"
-                className="a-btn a-btn--primary"
-                onClick={exportCsv}
-                aria-disabled={exportState.busy || visible.length === 0 || undefined}
-                disabled={visible.length === 0}
-              >
+              <button type="button" className="a-btn a-btn--primary" onClick={exportCsv} disabled={exportState.busy || visible.length === 0}>
                 <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14" />
                 </svg>
@@ -303,9 +409,26 @@ function Dashboard({ onSignedOut }) {
 
           {state.responses.length > 0 && (
             <>
-              <p className="responses__count" aria-live="polite">
-                Showing {visible.length} of {state.responses.length} {state.responses.length === 1 ? 'response' : 'responses'}
-              </p>
+              <div className="list-bar">
+                <label className="list-bar__all">
+                  <Checkbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} label="Select all displayed RSVPs" />
+                  <span>Select all</span>
+                </label>
+                <p className="responses__count" aria-live="polite">
+                  {selected.size > 0 ? `${selected.size} selected · ` : ''}Showing {visible.length} of {state.responses.length}{' '}
+                  {state.responses.length === 1 ? 'response' : 'responses'}
+                </p>
+                {selected.size > 0 && (
+                  <div className="list-bar__actions">
+                    <button type="button" className="a-btn a-btn--ghost a-btn--small" onClick={() => setSelected(new Set())}>
+                      Clear selection
+                    </button>
+                    <button type="button" className="a-btn a-btn--danger a-btn--small" onClick={() => askDelete(selectedRecords)}>
+                      Delete selected ({selected.size})
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {visible.length === 0 ? (
                 <div className="state state--empty">
@@ -322,6 +445,9 @@ function Dashboard({ onSignedOut }) {
                       <caption className="sr-only">Guest responses, {sort === 'newest' ? 'newest first' : 'oldest first'}</caption>
                       <thead>
                         <tr>
+                          <th scope="col" className="col-check">
+                            <span className="sr-only">Select</span>
+                          </th>
                           <th scope="col">Guest name</th>
                           <th scope="col">Phone number</th>
                           <th scope="col">Attendance</th>
@@ -329,51 +455,110 @@ function Dashboard({ onSignedOut }) {
                             Guests
                           </th>
                           <th scope="col">Submitted (Maldives time)</th>
+                          <th scope="col">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {visible.map((r) => (
-                          <tr key={r.id}>
-                            <th scope="row">{r.name}</th>
-                            <td>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : <span className="muted">—</span>}</td>
-                            <td>
-                              <Badge attendance={r.attendance} />
-                            </td>
-                            <td className="num">{r.guests}</td>
-                            <td>
-                              <time dateTime={r.submittedAt}>{formatWhen(r.submittedAt)}</time>
-                            </td>
-                          </tr>
-                        ))}
+                        {visible.map((r) => {
+                          const open = expanded.has(r.id);
+                          return (
+                            <Fragment key={r.id}>
+                              <tr className={selected.has(r.id) ? 'is-selected' : ''}>
+                                <td className="col-check">
+                                  <Checkbox checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} label={`Select ${r.name}’s RSVP`} />
+                                </td>
+                                <th scope="row">
+                                  <button
+                                    type="button"
+                                    className="expander"
+                                    aria-expanded={open}
+                                    aria-controls={`${id}-d-${r.id}`}
+                                    onClick={() => toggleExpanded(r.id)}
+                                  >
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                                      <path d="M9 6l6 6-6 6" />
+                                    </svg>
+                                    <span>{r.name}</span>
+                                    <span className="sr-only">{open ? ', hide guests' : ', show guests'}</span>
+                                  </button>
+                                </th>
+                                <td>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : <span className="muted">—</span>}</td>
+                                <td>
+                                  <Badge attendance={r.attendance} />
+                                </td>
+                                <td className="num">{r.guests}</td>
+                                <td>
+                                  <time dateTime={r.submittedAt}>{formatWhen(r.submittedAt)}</time>
+                                  {wasUpdated(r) && <span className="updated-tag">Updated</span>}
+                                </td>
+                                <td>
+                                  <Actions r={r} />
+                                </td>
+                              </tr>
+                              {open && (
+                                <tr className="details-row" id={`${id}-d-${r.id}`}>
+                                  <td />
+                                  <td colSpan={6}>
+                                    <div className="details">
+                                      <div>
+                                        <p className="details__label">Guests</p>
+                                        <GuestList r={r} />
+                                      </div>
+                                      {wasUpdated(r) && <p className="details__meta">Last updated {formatWhen(r.updatedAt)}</p>}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
 
                   <ul className="cards" aria-label="Guest responses">
-                    {visible.map((r) => (
-                      <li key={r.id} className="rcard">
-                        <div className="rcard__top">
-                          <h3 className="rcard__name">{r.name}</h3>
-                          <Badge attendance={r.attendance} />
-                        </div>
-                        <dl className="rcard__grid">
-                          <div>
-                            <dt>Phone</dt>
-                            <dd>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : '—'}</dd>
+                    {visible.map((r) => {
+                      const open = expanded.has(r.id);
+                      return (
+                        <li key={r.id} className={`rcard${selected.has(r.id) ? ' is-selected' : ''}`}>
+                          <div className="rcard__top">
+                            <Checkbox checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} label={`Select ${r.name}’s RSVP`} />
+                            <h3 className="rcard__name">{r.name}</h3>
+                            <Badge attendance={r.attendance} />
                           </div>
-                          <div>
-                            <dt>Guests</dt>
-                            <dd>{r.guests}</dd>
-                          </div>
-                          <div className="rcard__wide">
-                            <dt>Submitted</dt>
-                            <dd>
-                              <time dateTime={r.submittedAt}>{formatWhen(r.submittedAt)}</time>
-                            </dd>
-                          </div>
-                        </dl>
-                      </li>
-                    ))}
+                          <dl className="rcard__grid">
+                            <div>
+                              <dt>Phone</dt>
+                              <dd>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : '—'}</dd>
+                            </div>
+                            <div>
+                              <dt>Guests</dt>
+                              <dd>{r.guests}</dd>
+                            </div>
+                            <div className="rcard__wide">
+                              <dt>Submitted</dt>
+                              <dd>
+                                <time dateTime={r.submittedAt}>{formatWhen(r.submittedAt)}</time>
+                                {wasUpdated(r) && <span className="updated-tag">Updated</span>}
+                              </dd>
+                            </div>
+                          </dl>
+                          <button type="button" className="expander expander--card" aria-expanded={open} onClick={() => toggleExpanded(r.id)}>
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                              <path d="M9 6l6 6-6 6" />
+                            </svg>
+                            {open ? 'Hide guest names' : 'Show guest names'}
+                          </button>
+                          {open && (
+                            <div className="details details--card">
+                              <GuestList r={r} />
+                              {wasUpdated(r) && <p className="details__meta">Last updated {formatWhen(r.updatedAt)}</p>}
+                            </div>
+                          )}
+                          <Actions r={r} />
+                        </li>
+                      );
+                    })}
                   </ul>
                 </>
               )}
@@ -381,6 +566,21 @@ function Dashboard({ onSignedOut }) {
           )}
         </section>
       </main>
+
+      {editing && (
+        <EditRsvp
+          key={editing.id}
+          record={editing}
+          onClose={() => setEditing(null)}
+          onSaved={onSaved}
+          onRequestDelete={(r) => askDelete([r])}
+        />
+      )}
+      <ConfirmDelete request={confirm} busy={confirmState.busy} error={confirmState.error} onConfirm={confirmDelete} onCancel={() => setConfirm(null)} />
+
+      <div className="toast-region" role="status" aria-live="polite">
+        {toast && <div className={`toast toast--${toast.type}`}>{toast.text}</div>}
+      </div>
     </div>
   );
 }

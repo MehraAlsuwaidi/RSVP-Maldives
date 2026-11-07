@@ -72,3 +72,35 @@ export async function downloadCsv({ q, attendance, sort }) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+
+async function mutate(path, method, body) {
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 401) throw new ApiError('Your session has ended. Please sign in again.', 401);
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* handled below */
+  }
+  if (res.ok && data?.ok) return data;
+  const err = new ApiError(
+    res.status === 409
+      ? 'This phone number has already been registered for this event.'
+      : res.status === 400
+        ? 'Please check the highlighted details.'
+        : res.status === 404
+          ? 'This RSVP no longer exists. The list has been refreshed.'
+          : 'The change couldn’t be saved. Please try again.',
+    res.status,
+  );
+  err.fieldErrors = data?.errors || null;
+  throw err;
+}
+
+export const updateRsvp = (id, changes) => mutate(`/api/admin/rsvp?id=${encodeURIComponent(id)}`, 'PATCH', changes);
+export const deleteRsvp = (id) => mutate(`/api/admin/rsvp?id=${encodeURIComponent(id)}`, 'DELETE');
+export const deleteRsvps = (ids) => mutate('/api/admin/delete', 'POST', { ids });

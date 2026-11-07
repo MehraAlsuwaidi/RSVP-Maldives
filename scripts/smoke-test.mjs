@@ -36,7 +36,7 @@ await step('serves the invitation and the admin page', async () => {
 
 let savedId;
 await step('saves a Yes RSVP only after the database confirms', async () => {
-  const res = await post('/api/rsvp', { attendance: 'yes', name: `${tag} Yes`, phone: '+960 777-1234', guests: '3', submissionId: yesId });
+  const res = await post('/api/rsvp', { attendance: 'yes', name: `${tag} Yes`, phone: '+960 777-1234', guests: '3', guestNames: ['', 'Guest Two', 'Guest Three'], submissionId: yesId });
   assert.equal(res.status, 201);
   const body = await res.json();
   assert.equal(body.ok, true);
@@ -45,13 +45,13 @@ await step('saves a Yes RSVP only after the database confirms', async () => {
 });
 
 await step('a retried request updates the same record (no duplicate)', async () => {
-  const res = await post('/api/rsvp', { attendance: 'yes', name: `${tag} Yes`, phone: '+960 777-1234', guests: 4, submissionId: yesId });
+  const res = await post('/api/rsvp', { attendance: 'yes', name: `${tag} Yes`, phone: '+960 777-1234', guests: 4, guestNames: ['', 'Guest Two', 'Guest Three', 'Guest Four'], submissionId: yesId });
   assert.equal(res.status, 201);
   assert.equal((await res.json()).id, savedId);
 });
 
 await step('saves a No RSVP with a name and 0 guests', async () => {
-  const res = await post('/api/rsvp', { attendance: 'no', name: `${tag} No`, phone: 'ignored', guests: 9, submissionId: randomUUID() });
+  const res = await post('/api/rsvp', { attendance: 'no', name: `${tag} No`, phone: '+960 777-1235', guests: 9, submissionId: randomUUID() });
   assert.equal(res.status, 201);
 });
 
@@ -69,7 +69,7 @@ await step('validates Yes fields on the server', async () => {
 });
 
 await step('rejects cross-site posts', async () => {
-  const res = await post('/api/rsvp', { attendance: 'no', name: 'Evil', submissionId: randomUUID() }, { Origin: 'https://evil.example' });
+  const res = await post('/api/rsvp', { attendance: 'no', name: 'Evil', phone: '7771236', submissionId: randomUUID() }, { Origin: 'https://evil.example' });
   assert.equal(res.status, 403);
 });
 
@@ -106,7 +106,7 @@ if (PIN) {
     assert.equal(mine.find((r) => r.attendance === 'yes').phone, '+9607771234');
     const no = mine.find((r) => r.attendance === 'no');
     assert.equal(no.guests, 0);
-    assert.equal(no.phone, null);
+    assert.equal(no.phone, '+9607771235');
   });
 
   await step('CSV export applies the filters server-side', async () => {

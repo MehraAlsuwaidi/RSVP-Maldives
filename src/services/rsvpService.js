@@ -31,7 +31,7 @@ export function createSubmissionId() {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * @param {{attendance:'yes'|'no', name?:string, phone?:string, guests?:number, submissionId:string}} rsvp
+ * @param {{attendance:'yes'|'no', name:string, phone:string, guests?:number, guestNames?:string[], submissionId:string}} rsvp
  * @returns {Promise<{ preview: boolean, id?: string }>}
  */
 export async function submitRsvp(rsvp) {
@@ -70,6 +70,12 @@ export async function submitRsvp(rsvp) {
 
   if (response.ok && body?.ok === true && body.id) return { preview: false, id: body.id };
 
+  if (response.status === 409 && body?.error === 'phone_registered') {
+    throw new RsvpSubmissionError('This phone number has already been registered for this event.', {
+      kind: 'duplicate-phone',
+      fieldErrors: body.errors || null,
+    });
+  }
   if (response.status === 400 && body?.errors) {
     throw new RsvpSubmissionError('Please check the highlighted details.', {
       kind: 'validation',
