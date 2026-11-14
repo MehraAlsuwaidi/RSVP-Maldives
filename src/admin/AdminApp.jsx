@@ -114,6 +114,16 @@ function SummaryCard({ label, value, hint, tone }) {
 const Badge = ({ attendance }) =>
   attendance === 'yes' ? <span className="badge badge--yes">Yes</span> : <span className="badge badge--no">No</span>;
 
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** "2 adults · 1 child" for parties whose categories are known. */
+function categorySplit(r) {
+  if (r.attendance !== 'yes' || !r.guestList?.some((g) => g.category)) return null;
+  const kids = r.guestList.filter((g) => g.category === 'child').length;
+  const adults = r.guestList.filter((g) => g.category === 'adult').length;
+  return `${plural(adults, 'adult')} · ${plural(kids, 'child', 'children')}`;
+}
+
 const wasUpdated = (r) => r.updatedAt && Math.abs(new Date(r.updatedAt) - new Date(r.submittedAt)) > 1000;
 
 function GuestList({ r }) {
@@ -126,8 +136,11 @@ function GuestList({ r }) {
     );
   return (
     <ol className="guest-list">
-      {r.guestNames.map((g, i) => (
-        <li key={i}>{g}</li>
+      {(r.guestList || []).map((g, i) => (
+        <li key={i}>
+          {g.name}
+          {g.category && <span className={`cat-tag cat-tag--${g.category}`}>{g.category === 'child' ? 'Child' : 'Adult'}</span>}
+        </li>
       ))}
     </ol>
   );
@@ -318,7 +331,18 @@ function Dashboard({ onSignedOut }) {
           <dl className="stats" aria-busy={firstLoad || undefined}>
             <SummaryCard tone="total" label="Total responses" value={firstLoad ? '–' : totals.total} />
             <SummaryCard tone="yes" label="Attending parties" value={firstLoad ? '–' : totals.attendingParties} />
-            <SummaryCard tone="guests" label="Attending guests" value={firstLoad ? '–' : totals.attendingGuests} hint="Includes each person who replied" />
+            <SummaryCard
+              tone="guests"
+              label="Attending guests"
+              value={firstLoad ? '–' : totals.attendingGuests}
+              hint={
+                firstLoad
+                  ? 'Includes each person who replied'
+                  : `${plural(totals.adults, 'adult')} · ${plural(totals.children, 'child', 'children')}${
+                      totals.unspecified ? ` · ${totals.unspecified} not specified` : ''
+                    }`
+              }
+            />
             <SummaryCard tone="no" label="Declined" value={firstLoad ? '–' : totals.declined} />
           </dl>
         </section>
@@ -486,7 +510,10 @@ function Dashboard({ onSignedOut }) {
                                 <td>
                                   <Badge attendance={r.attendance} />
                                 </td>
-                                <td className="num">{r.guests}</td>
+                                <td className="num">
+                                  {r.guests}
+                                  {categorySplit(r) && <span className="count-split">{categorySplit(r)}</span>}
+                                </td>
                                 <td>
                                   <time dateTime={r.submittedAt}>{formatWhen(r.submittedAt)}</time>
                                   {wasUpdated(r) && <span className="updated-tag">Updated</span>}
@@ -533,7 +560,10 @@ function Dashboard({ onSignedOut }) {
                             </div>
                             <div>
                               <dt>Guests</dt>
-                              <dd>{r.guests}</dd>
+                              <dd>
+                                {r.guests}
+                                {categorySplit(r) && <span className="count-split">{categorySplit(r)}</span>}
+                              </dd>
                             </div>
                             <div className="rcard__wide">
                               <dt>Submitted</dt>

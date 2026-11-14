@@ -1684,3 +1684,46 @@ a {
   opacity: 0.8;
   transform: none;
 }
+
+/* ---------- "Child" toggle beside each guest name ---------- */
+.field__line {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.field__line > input {
+  flex: 1;
+  min-width: 0;
+}
+.child-toggle {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1.5px solid var(--gold-soft);
+  border-radius: 12px;
+  background: var(--pearl);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.child-toggle input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--rose-700);
+  cursor: pointer;
+}
+.child-toggle:has(input:checked) {
+  background: var(--blush-100);
+  border-color: var(--rose-700);
+}
+.child-toggle:has(input:focus-visible) {
+  outline: 3px solid var(--gold-deep);
+  outline-offset: 2px;
+}

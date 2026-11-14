@@ -24,14 +24,25 @@ export function summarise(rows) {
   let attendingParties = 0;
   let attendingGuests = 0;
   let declined = 0;
+  let children = 0;
+  let adults = 0;
   for (const r of rows) {
     if (r.attendance === 'yes') {
       attendingParties += 1;
       attendingGuests += Number(r.guests) || 0;
+      for (const g of r.guestList || []) {
+        if (g.category === 'child') children += 1;
+        else if (g.category === 'adult') adults += 1;
+      }
     } else if (r.attendance === 'no') declined += 1;
   }
-  return { total: rows.length, attendingParties, attendingGuests, declined };
+  // Guests whose category wasn't recorded (older RSVPs or names not provided).
+  const unspecified = Math.max(0, attendingGuests - children - adults);
+  return { total: rows.length, attendingParties, attendingGuests, declined, adults, children, unspecified };
 }
+
+const countCategory = (r, category) =>
+  r.attendance === 'yes' && (r.guestList || []).length ? r.guestList.filter((g) => g.category === category).length : '';
 
 /** Neutralises spreadsheet formulas (=, +, -, @) and quotes every cell. */
 function csvCell(value) {
@@ -50,11 +61,21 @@ export function toCsv(rows, timeZone = 'Indian/Maldives') {
     minute: '2-digit',
     hour12: false,
   });
-  const header = ['Guest name', 'Phone number', 'Attendance', 'Number of guests', 'Guest names', 'Submitted (Maldives time)', 'Submitted (UTC ISO)'];
+  const header = ['Guest name', 'Phone number', 'Attendance', 'Number of guests', 'Adults', 'Children', 'Guest names (category)', 'Submitted (Maldives time)', 'Submitted (UTC ISO)'];
   const lines = [header.map(csvCell).join(',')];
   for (const r of rows) {
     lines.push(
-      [r.name, r.phone ?? '', r.attendance === 'yes' ? 'Yes' : 'No', r.guests, (r.guestNames || []).join('; '), fmt.format(new Date(r.submittedAt)), r.submittedAt]
+      [
+        r.name,
+        r.phone ?? '',
+        r.attendance === 'yes' ? 'Yes' : 'No',
+        r.guests,
+        countCategory(r, 'adult'),
+        countCategory(r, 'child'),
+        (r.guestList || []).map((g) => `${g.name} (${g.category || 'not specified'})`).join('; '),
+        fmt.format(new Date(r.submittedAt)),
+        r.submittedAt,
+      ]
         .map(csvCell)
         .join(','),
     );

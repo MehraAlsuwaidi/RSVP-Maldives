@@ -9,19 +9,18 @@ import Sparkles from '../components/Sparkles.jsx';
 const RsvpChapter = forwardRef(function RsvpChapter(_, ref) {
   const cardRef = useRef(null);
 
-  // Turn scroll snapping off while the guest is typing, so the keyboard never causes jumps.
+  // Once the guest starts using the form, turn scroll snapping off for good. Re-enabling it
+  // on blur made the page jump between press and release, so taps (e.g. on "No") missed.
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return undefined;
     const on = () => document.documentElement.classList.add('is-form-active');
-    const off = (e) => {
-      if (!el.contains(e.relatedTarget)) document.documentElement.classList.remove('is-form-active');
-    };
     el.addEventListener('focusin', on);
-    el.addEventListener('focusout', off);
+    el.addEventListener('pointerdown', on);
     return () => {
       el.removeEventListener('focusin', on);
-      el.removeEventListener('focusout', off);
+      el.removeEventListener('pointerdown', on);
+      document.documentElement.classList.remove('is-form-active');
     };
   }, []);
 

@@ -37,6 +37,11 @@ if (process.env.SEED_LEGACY) {
       ('11111111-1111-4111-8111-111111111111','21111111-1111-4111-8111-111111111111','yes','Legacy Two','7772826',2, now() - interval '2 days'),
       ('11111111-1111-4111-8111-111111111112','21111111-1111-4111-8111-111111111112','yes','Legacy Eight Digits','77777766',1, now() - interval '1 day'),
       ('11111111-1111-4111-8111-111111111113','21111111-1111-4111-8111-111111111113','no','Legacy Declined',NULL,0, now() - interval '3 days');
+    -- Saved by the previous version: guest names, but no categories yet.
+    ALTER TABLE rsvps ADD COLUMN guest_names JSONB NOT NULL DEFAULT '[]'::jsonb;
+    INSERT INTO rsvps (id, submission_id, attendance, name, phone, guests, guest_names, created_at) VALUES
+      ('11111111-1111-4111-8111-111111111114','21111111-1111-4111-8111-111111111114','yes','Names No Category','+9607910044',2,
+       '["Names No Category","Their Friend"]', now() - interval '12 hours');
   `);
 }
 

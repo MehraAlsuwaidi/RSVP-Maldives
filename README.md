@@ -67,6 +67,13 @@ Postgres table `rsvps` ─► /admin dashboard (PIN session only)
 - **Yes** requires name, phone, number of guests and a full name for every guest
   ("Guest 1 – Full Name" … one field per guest). Guest 1 is the person replying and stays in sync with
   "Your Name". **No** requires name and phone. Every visible field is required.
+- **Guest category:** each guest name has a **Child** tick box. Ticked guests are saved as `child` and
+  everyone else as `adult`. Each RSVP stores its guests in the `guest_list` column as
+  `[{"name": "Zainab", "category": "child"}, …]`. The database view **`rsvp_guests`** lists one row
+  per attending guest with its category, so in the Neon console you can run
+  `SELECT * FROM rsvp_guests;` or
+  `SELECT category, count(*) FROM rsvp_guests GROUP BY category;`.
+  Guests saved before categories existed show `not specified` until an admin sets them.
 - **Phone numbers** are normalised before checking and saving: spaces, hyphens, dots and brackets are
   ignored, and `00` is treated as `+`. Local 7-digit numbers get the Maldives code, so `777 1234`,
   `960 7771234`, `00960 777-1234` and `(+960) 777.1234` are all saved as `+9607771234`.
@@ -81,15 +88,15 @@ Postgres table `rsvps` ─► /admin dashboard (PIN session only)
 ## Dashboard (`/admin`, PIN)
 
 - **Summary cards:** total responses, attending parties, attending guests (the sum of guest counts on
-  Yes replies) and declined. They refresh after every change.
+  Yes replies, with an adults · children split) and declined. They refresh after every change.
 - **Finding responses:** search by contact name, any guest name or phone number. Filter by attendance,
   sort newest or oldest, and export a server-generated CSV that includes all guest names.
-- **Viewing:** each RSVP expands to show every guest name, and older RSVPs saved before names were
+- **Viewing:** each RSVP expands to show every guest name with an Adult or Child tag, and older RSVPs saved before names were
   collected show "Guest names not provided".
 - **Selecting:** a checkbox per RSVP, plus **Select all** for the rows currently shown and
   **Delete selected**.
-- **View / Edit:** change the contact name, phone, attendance, number of guests and individual guest
-  names, and add or remove guests. Phone changes go through the same normalisation and duplicate check,
+- **View / Edit:** change the contact name, phone, attendance, number of guests, individual guest
+  names and each guest's **Child** tick box, and add or remove guests. Phone changes go through the same normalisation and duplicate check,
   with the record itself excluded. Removing the last attending guest asks you to change the RSVP to
   Declined or delete it. **Cancel** discards every unsaved change.
 - **Delete:** a confirmation always states how many RSVP records and attending guests will be removed.
@@ -124,7 +131,7 @@ Open <http://localhost:3000> and <http://localhost:3000/admin> (PIN 1234). Then,
 ADMIN_PIN=1234 node scripts/api-test.mjs
 ```
 
-This runs 28 API checks covering guest names, duplicate phone formats, edits, deletes and auth.
+This runs 29 API checks covering guest names, duplicate phone formats, edits, deletes and auth.
 
 ## Editing content and artwork
 

@@ -29,7 +29,7 @@ export default async function handler(req, res) {
 
   const result = validateRsvp(body, { maxGuests: MAX_GUESTS });
   if (!result.ok) return send(res, 400, { ok: false, error: 'validation', errors: result.errors });
-  const { attendance, name, phone, guests, guestNames } = result.value;
+  const { attendance, name, phone, guests, guestNames, guestList } = result.value;
   const submissionId = String(body.submissionId).toLowerCase();
 
   try {
@@ -43,12 +43,12 @@ export default async function handler(req, res) {
     if (existing.length) return phoneTaken(res);
 
     const rows = await sql`
-      INSERT INTO rsvps (id, submission_id, event_id, attendance, name, phone, guests, guest_names)
+      INSERT INTO rsvps (id, submission_id, event_id, attendance, name, phone, guests, guest_names, guest_list)
       VALUES (${crypto.randomUUID()}, ${submissionId}, ${EVENT_ID}, ${attendance}, ${name}, ${phone}, ${guests},
-              ${JSON.stringify(guestNames)}::jsonb)
+              ${JSON.stringify(guestNames)}::jsonb, ${JSON.stringify(guestList)}::jsonb)
       ON CONFLICT (submission_id) DO UPDATE SET
         attendance = EXCLUDED.attendance, name = EXCLUDED.name, phone = EXCLUDED.phone,
-        guests = EXCLUDED.guests, guest_names = EXCLUDED.guest_names, updated_at = now()
+        guests = EXCLUDED.guests, guest_names = EXCLUDED.guest_names, guest_list = EXCLUDED.guest_list, updated_at = now()
       RETURNING id`;
     if (!rows[0]?.id) return send(res, 500, { ok: false, error: 'not_saved' });
     return send(res, 201, { ok: true, id: rows[0].id });

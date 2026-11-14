@@ -69,6 +69,13 @@ function initialDraft(record) {
     attendance: record.attendance,
     // Legacy records keep their stored count with blank names (nothing is invented).
     guestNames: record.attendance === 'yes' ? (legacy ? Array.from({ length: record.guests }, () => '') : [...record.guestNames]) : [],
+    // true = child. Guests saved before categories existed start unticked.
+    guestChildren:
+      record.attendance === 'yes'
+        ? legacy
+          ? Array.from({ length: record.guests }, () => false)
+          : (record.guestList || []).map((g) => g.category === 'child')
+        : [],
   };
 }
 
@@ -80,7 +87,7 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [lastGuestNotice, setLastGuestNotice] = useState(false);
-  const stash = useRef([]); // names removed by lowering the count, restored if raised again
+  const stash = useRef([]); // guests removed by lowering the count, restored if raised again
   const nameRef = useRef(null);
   const phoneRef = useRef(null);
   const guestRefs = useRef([]);
@@ -98,10 +105,15 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
     if (n === 0) return setLastGuestNotice(true);
     setLastGuestNotice(false);
     setDraft((d) => {
-      const list = [...d.guestNames];
-      if (n < list.length) stash.current = [...list.slice(n), ...stash.current];
-      while (list.length < n) list.push(stash.current.shift() ?? '');
-      return { ...d, guestNames: list.slice(0, n) };
+      const names = [...d.guestNames];
+      const kids = [...d.guestChildren];
+      if (n < names.length) stash.current = [...names.slice(n).map((name, i) => ({ name, child: !!kids[n + i] })), ...stash.current];
+      while (names.length < n) {
+        const back = stash.current.shift();
+        names.push(back?.name ?? '');
+        kids[names.length - 1] = back?.child ?? false;
+      }
+      return { ...d, guestNames: names.slice(0, n), guestChildren: kids.slice(0, n) };
     });
     clear('guests');
   };
@@ -109,13 +121,16 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
   const addGuest = () => {
     if (count >= maxGuests) return;
     setLastGuestNotice(false);
-    update({ guestNames: [...draft.guestNames, ''] });
+    update({ guestNames: [...draft.guestNames, ''], guestChildren: [...draft.guestChildren.slice(0, count), false] });
     requestAnimationFrame(() => guestRefs.current[count]?.focus());
   };
 
   const removeGuest = (index) => {
     if (count <= 1) return setLastGuestNotice(true); // last attendee: choose Declined or delete
-    update({ guestNames: draft.guestNames.filter((_, i) => i !== index) });
+    update({
+      guestNames: draft.guestNames.filter((_, i) => i !== index),
+      guestChildren: draft.guestChildren.filter((_, i) => i !== index),
+    });
     setErrors((e) => ({ ...e, guestNames: undefined, guests: undefined }));
     requestAnimationFrame(() => guestRefs.current[Math.max(0, index - 1)]?.focus());
   };
@@ -127,9 +142,15 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
     if (errors.guestNames?.[index]) setErrors((e) => ({ ...e, guestNames: { ...e.guestNames, [index]: undefined } }));
   };
 
+  const setChild = (index, checked) => {
+    const kids = [...draft.guestChildren];
+    kids[index] = checked;
+    update({ guestChildren: kids });
+  };
+
   const chooseAttendance = (value) => {
     setLastGuestNotice(false);
-    if (value === 'yes' && draft.guestNames.length === 0) update({ attendance: value, guestNames: [draft.name] });
+    if (value === 'yes' && draft.guestNames.length === 0) update({ attendance: value, guestNames: [draft.name], guestChildren: [false] });
     else update({ attendance: value });
     setErrors({});
   };
@@ -143,6 +164,7 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
       attendance: draft.attendance,
       guests: attending ? String(count) : '0',
       guestNames: attending ? draft.guestNames : [],
+      guestChildren: attending ? draft.guestNames.map((_, i) => draft.guestChildren[i] === true) : [],
     };
     const check = validateAdminEdit(payload, record, { maxGuests });
     if (!check.ok) {
@@ -249,6 +271,16 @@ export function EditRsvp({ record, onClose, onSaved, onRequestDelete, maxGuests 
                           aria-invalid={errors.guestNames?.[i] ? 'true' : undefined}
                           aria-describedby={errors.guestNames?.[i] ? `${uid}-g${i}-err` : undefined}
                         />
+                        <label className="child-toggle">
+                          <input
+                            type="checkbox"
+                            className="a-check"
+                            checked={draft.guestChildren[i] === true}
+                            onChange={(e) => setChild(i, e.target.checked)}
+                            aria-label={`Guest ${i + 1}${g ? `, ${g},` : ''} is a child`}
+                          />
+                          <span aria-hidden="true">Child</span>
+                        </label>
                         <button type="button" className="a-btn a-btn--ghost a-btn--small" onClick={() => removeGuest(i)} aria-label={`Remove guest ${i + 1}${g ? `, ${g}` : ''}`}>
                           Remove
                         </button>

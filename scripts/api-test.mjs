@@ -43,7 +43,10 @@ await step('legacy numbers were migrated to +960 format', async () => {
 });
 
 await step('Yes with 3 guests saves all 3 names (Guest 1 = Your Name)', async () => {
-  const res = await rsvp({ attendance: 'yes', name: 'Aisha Ali', phone: '+960 791 0001', guests: '3', guestNames: ['ignored', 'Bilal Ali', 'Cara Ali'] });
+  const res = await rsvp({
+    attendance: 'yes', name: 'Aisha Ali', phone: '+960 791 0001', guests: '3',
+    guestNames: ['ignored', 'Bilal Ali', 'Cara Ali'], guestChildren: [false, false, true],
+  });
   assert.equal(res.status, 201);
 });
 
@@ -98,6 +101,7 @@ await step('dashboard data includes guest names and legacy records', async () =>
   rows = await list();
   const aisha = rows.find((r) => r.name === 'Aisha Ali');
   assert.deepEqual(aisha.guestNames, ['Aisha Ali', 'Bilal Ali', 'Cara Ali']);
+  assert.deepEqual(aisha.guestList.map((g) => g.category), ['adult', 'adult', 'child'], 'categories saved');
   assert.equal(aisha.guests, 3);
   const legacy = rows.find((r) => r.name === 'Legacy Two');
   assert.deepEqual(legacy.guestNames, []);
@@ -107,7 +111,8 @@ await step('dashboard data includes guest names and legacy records', async () =>
 
 await step('CSV export includes individual guest names and search finds them', async () => {
   const csv = await (await req('/api/admin/export?q=Bilal')).text();
-  assert.ok(csv.includes('Aisha Ali; Bilal Ali; Cara Ali'));
+  assert.ok(csv.includes('Aisha Ali (adult); Bilal Ali (adult); Cara Ali (child)'));
+  assert.ok(csv.includes('"Adults","Children"'));
   assert.equal(csv.trim().split('\n').length, 2);
 });
 
@@ -133,9 +138,13 @@ await step('edit: a number belonging to another RSVP is blocked', async () => {
 
 await step('edit: add a guest and remove another (count stays in sync)', async () => {
   const names = ['Aisha A. Ali', 'Cara Ali', 'Dawood Ali', 'Eman Ali'];
-  const res = await patch(aisha().id, { name: 'Aisha A. Ali', phone: aisha().phone, attendance: 'yes', guests: '4', guestNames: names });
+  const res = await patch(aisha().id, {
+    name: 'Aisha A. Ali', phone: aisha().phone, attendance: 'yes', guests: '4', guestNames: names, guestChildren: [false, true, true, false],
+  });
   assert.equal(res.status, 200);
-  assert.deepEqual((await res.json()).response.guestNames, names);
+  const out = (await res.json()).response;
+  assert.deepEqual(out.guestNames, names);
+  assert.deepEqual(out.guestList.map((g) => g.category), ['adult', 'child', 'child', 'adult'], 'admin can mark children');
 });
 
 await step('edit: mismatched count or blank guest name is rejected', async () => {
@@ -157,6 +166,17 @@ await step('legacy record: phone/name editable without inventing guest names; co
   const r = (await res.json()).response;
   assert.deepEqual(r.guestNames, []);
   assert.equal(r.guests, 1);
+});
+
+await step('older guest names show category "not specified" until an admin sets it', async () => {
+  const r = rows.find((x) => x.name === 'Names No Category');
+  assert.deepEqual(r.guestList, [
+    { name: 'Names No Category', category: null },
+    { name: 'Their Friend', category: null },
+  ]);
+  const res = await patch(r.id, { name: r.name, phone: r.phone, attendance: 'yes', guests: '2', guestNames: r.guestNames, guestChildren: [false, true] });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).response.guestList.map((g) => g.category), ['adult', 'child']);
 });
 
 await step('legacy record: names can be completed later', async () => {

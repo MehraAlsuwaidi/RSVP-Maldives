@@ -46,6 +46,13 @@ export function normalisePhone(raw) {
 
 const cleanName = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
+/** Guest categories stored per guest. A guest is a child only when "Child" is ticked. */
+export const GUEST_CATEGORIES = ['adult', 'child'];
+const isChild = (flag) => flag === true || flag === 'true' || flag === 'child';
+/** Pairs names with their "Child" flags → [{ name, category }]. */
+export const toGuestList = (names, children = []) =>
+  names.map((name, i) => ({ name, category: isChild(children?.[i]) ? 'child' : 'adult' }));
+
 /** Parses the guest count; returns an integer or null when it isn't a whole number ≥ 1. */
 export function parseGuestCount(raw) {
   const text = String(raw ?? '').trim();
@@ -55,7 +62,8 @@ export function parseGuestCount(raw) {
 }
 
 /**
- * @param {object} input  { attendance: 'yes'|'no', name, phone, guests?, guestNames? }
+ * @param {object} input  { attendance: 'yes'|'no', name, phone, guests?, guestNames?, guestChildren? }
+ *   guestChildren[i] === true marks guest i as a child.
  * @returns {{ ok: boolean, value?: object, errors: object }}
  *   errors.guestNames, when present, maps a guest index (0-based) to its message.
  */
@@ -83,7 +91,7 @@ export function validateRsvp(input, { maxGuests = DEFAULT_MAX_GUESTS } = {}) {
   // "No" needs a name and phone only; guest count and names are not collected.
   if (attendance === 'no') {
     if (Object.keys(errors).length) return { ok: false, errors };
-    return { ok: true, value: { attendance, name, phone, guests: 0, guestNames: [] }, errors };
+    return { ok: true, value: { attendance, name, phone, guests: 0, guestNames: [], guestList: [] }, errors };
   }
 
   const guestsRaw = String(data.guests ?? '').trim();
@@ -108,7 +116,8 @@ export function validateRsvp(input, { maxGuests = DEFAULT_MAX_GUESTS } = {}) {
   }
 
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { attendance, name, phone, guests, guestNames }, errors };
+  const guestList = toGuestList(guestNames, data.guestChildren);
+  return { ok: true, value: { attendance, name, phone, guests, guestNames, guestList }, errors };
 }
 
 export const DUPLICATE_PHONE_MESSAGE = 'This phone number has already been registered for this event.';
@@ -118,7 +127,7 @@ export const DUPLICATE_PHONE_MESSAGE = 'This phone number has already been regis
  * The main contact (name/phone) is separate from the attendee list (guestNames),
  * so removing attendees never deletes the RSVP itself.
  *
- * @param {object} input     { name, phone, attendance, guests, guestNames }
+ * @param {object} input     { name, phone, attendance, guests, guestNames, guestChildren }
  * @param {object} existing  stored record { phone, guestNames, guests }
  * Legacy records that were saved without individual names may stay that way:
  * an empty guestNames list is accepted when the stored record had none, and the
@@ -147,6 +156,7 @@ export function validateAdminEdit(input, existing, { maxGuests = DEFAULT_MAX_GUE
 
   let guests = 0;
   let guestNames = [];
+  let guestList = [];
   if (attendance === 'yes') {
     const list = Array.isArray(data.guestNames) ? data.guestNames.map(cleanName) : [];
     const legacyBlank = list.length === 0 || list.every((g) => !g);
@@ -169,9 +179,10 @@ export function validateAdminEdit(input, existing, { maxGuests = DEFAULT_MAX_GUE
       if (Object.keys(nameErrors).length) errors.guestNames = nameErrors;
       guests = count;
       guestNames = list;
+      guestList = toGuestList(list, data.guestChildren);
     }
   }
 
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { attendance, name, phone, guests, guestNames }, errors };
+  return { ok: true, value: { attendance, name, phone, guests, guestNames, guestList }, errors };
 }

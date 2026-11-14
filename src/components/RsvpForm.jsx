@@ -23,8 +23,9 @@ function FieldError({ id, message }) {
   );
 }
 
-function Field({ id, label, error, help, inputRef, ...input }) {
+function Field({ id, label, error, help, inputRef, trailing, ...input }) {
   const describedBy = [help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(' ') || undefined;
+  const control = <input id={id} ref={inputRef} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} required {...input} />;
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
@@ -33,7 +34,14 @@ function Field({ id, label, error, help, inputRef, ...input }) {
           {help}
         </p>
       )}
-      <input id={id} ref={inputRef} aria-invalid={error ? 'true' : undefined} aria-describedby={describedBy} required {...input} />
+      {trailing ? (
+        <div className="field__line">
+          {control}
+          {trailing}
+        </div>
+      ) : (
+        control
+      )}
       <FieldError id={`${id}-error`} message={error} />
     </div>
   );
@@ -102,6 +110,8 @@ export default function RsvpForm() {
   // guestNames[0] is unused: Guest 1 is always values.name. Extra entries are kept when
   // the count goes down, so names come back if it goes up again.
   const [guestNames, setGuestNames] = useState([]);
+  // guestChildren[i] is true when guest i is a child (kept like the names when the count changes).
+  const [guestChildren, setGuestChildren] = useState([]);
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState('idle'); // idle | submitting | success | error
   const [submitError, setSubmitError] = useState('');
@@ -149,6 +159,15 @@ export default function RsvpForm() {
     if (errors.guestNames?.[index]) setErrors((e) => ({ ...e, guestNames: { ...e.guestNames, [index]: undefined } }));
   };
 
+  const toggleChild = (index) => (event) => {
+    const checked = event.target.checked;
+    setGuestChildren((list) => {
+      const next = [...list];
+      next[index] = checked;
+      return next;
+    });
+  };
+
   const choose = (value) => {
     setAttendance(value);
     // Drop errors for fields that are now hidden.
@@ -166,7 +185,15 @@ export default function RsvpForm() {
 
   async function send() {
     if (inflight.current) return; // repeated taps while sending are ignored
-    const check = validateRsvp({ attendance, ...values, guestNames: [values.name, ...guestNames.slice(1)] }, { maxGuests: RSVP_CONFIG.maxGuests });
+    const check = validateRsvp(
+      {
+        attendance,
+        ...values,
+        guestNames: [values.name, ...guestNames.slice(1)],
+        guestChildren: Array.from({ length: guestCount }, (_, i) => guestChildren[i] === true),
+      },
+      { maxGuests: RSVP_CONFIG.maxGuests },
+    );
     if (!check.ok) {
       setErrors(check.errors);
       focusFirstError(check.errors);
@@ -178,7 +205,13 @@ export default function RsvpForm() {
     setSubmitError('');
     setStatus('submitting');
     try {
-      const saved = await submitRsvp({ ...check.value, submissionId: submissionId.current, website: honeypot.current?.value || '' });
+      const { guestList, ...rest } = check.value;
+      const saved = await submitRsvp({
+        ...rest,
+        guestChildren: guestList.map((g) => g.category === 'child'),
+        submissionId: submissionId.current,
+        website: honeypot.current?.value || '',
+      });
       setResult({ ...saved, attendance: check.value.attendance });
       setStatus('success');
     } catch (error) {
@@ -311,8 +344,8 @@ export default function RsvpForm() {
                         <legend className="guest-names__legend">Guest names</legend>
                         <p className="field__help" id={`${uid}-guest-names-help`}>
                           {guestCount === 1
-                            ? 'Guest 1 is you.'
-                            : `Please enter the full name of each of the ${guestCount} guests. Guest 1 is you.`}
+                            ? 'Guest 1 is you. Tick “Child” for any guest who is a child.'
+                            : `Please enter the full name of each of the ${guestCount} guests. Guest 1 is you. Tick “Child” for any guest who is a child.`}
                         </p>
                         <div className="guest-names__list">
                           <AnimatePresence initial={false}>
@@ -333,6 +366,18 @@ export default function RsvpForm() {
                                   value={i === 0 ? values.name : guestNames[i] || ''}
                                   onChange={setGuestName(i)}
                                   error={errors.guestNames?.[i]}
+                                  trailing={
+                                    <label className="child-toggle">
+                                      <input
+                                        type="checkbox"
+                                        name={`guest-${i + 1}-child`}
+                                        checked={guestChildren[i] === true}
+                                        onChange={toggleChild(i)}
+                                        aria-label={`Guest ${i + 1} is a child`}
+                                      />
+                                      <span aria-hidden="true">Child</span>
+                                    </label>
+                                  }
                                 />
                               </motion.div>
                             ))}

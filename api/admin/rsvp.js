@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   try {
     await ensureSchema();
     const [existingRow] = await sql`
-      SELECT id, attendance, name, phone, guests, guest_names, created_at, updated_at
+      SELECT id, attendance, name, phone, guests, guest_names, guest_list, created_at, updated_at
       FROM rsvps WHERE id = ${id} AND event_id = ${EVENT_ID}`;
     if (!existingRow) return send(res, 404, { ok: false, error: 'not_found' });
 
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const result = validateAdminEdit(body, existing, { maxGuests: MAX_GUESTS });
     if (!result.ok) return send(res, 400, { ok: false, error: 'validation', errors: result.errors });
-    const { attendance, name, phone, guests, guestNames } = result.value;
+    const { attendance, name, phone, guests, guestNames, guestList } = result.value;
 
     if (phone) {
       // Same normalised number on another RSVP for this event? (this record is excluded)
@@ -52,9 +52,9 @@ export default async function handler(req, res) {
 
     const [row] = await sql`
       UPDATE rsvps SET attendance = ${attendance}, name = ${name}, phone = ${phone}, guests = ${guests},
-             guest_names = ${JSON.stringify(guestNames)}::jsonb, updated_at = now()
+             guest_names = ${JSON.stringify(guestNames)}::jsonb, guest_list = ${JSON.stringify(guestList)}::jsonb, updated_at = now()
       WHERE id = ${id} AND event_id = ${EVENT_ID}
-      RETURNING id, attendance, name, phone, guests, guest_names, created_at, updated_at`;
+      RETURNING id, attendance, name, phone, guests, guest_names, guest_list, created_at, updated_at`;
     await retryPhoneIndex();
     return send(res, 200, { ok: true, response: rowToResponse(row) });
   } catch (error) {
